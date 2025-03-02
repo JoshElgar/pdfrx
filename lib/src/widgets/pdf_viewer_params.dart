@@ -607,20 +607,17 @@ class PdfViewerParams {
         other.pageDropShadow == pageDropShadow &&
         other.panEnabled == panEnabled &&
         other.scaleEnabled == scaleEnabled &&
-        other.onInteractionEnd == onInteractionEnd &&
-        other.onInteractionStart == onInteractionStart &&
-        other.onInteractionUpdate == onInteractionUpdate &&
-        other.interactionEndFrictionCoefficient == interactionEndFrictionCoefficient &&
         other.onDocumentChanged == onDocumentChanged &&
+        other.onInteractionStart == onInteractionStart &&
+        other.onInteractionEnd == onInteractionEnd &&
         other.calculateInitialPageNumber == calculateInitialPageNumber &&
         other.calculateCurrentPageNumber == calculateCurrentPageNumber &&
         other.onViewerReady == onViewerReady &&
-        other.onViewSizeChanged == onViewSizeChanged &&
         other.onPageChanged == onPageChanged &&
-        other.getPageRenderingScale == getPageRenderingScale &&
         other.scrollByMouseWheel == scrollByMouseWheel &&
         other.enableKeyboardNavigation == enableKeyboardNavigation &&
         other.scrollByArrowKey == scrollByArrowKey &&
+        other.maxImageBytesCachedOnMemory == maxImageBytesCachedOnMemory &&
         other.horizontalCacheExtent == horizontalCacheExtent &&
         other.verticalCacheExtent == verticalCacheExtent &&
         other.linkHandlerParams == linkHandlerParams &&
@@ -1024,3 +1021,22 @@ class PdfLinkHandlerParams {
 
 /// Custom painter for the page links.
 typedef PdfLinkCustomPagePainter = void Function(ui.Canvas canvas, Rect pageRect, PdfPage page, List<PdfLink> links);
+
+/// A drawer item for the PDF viewer.
+class DrawerItem {
+  /// Creates a drawer item.
+  const DrawerItem({
+    required this.title,
+    required this.onTap,
+    this.icon,
+  });
+
+  /// The title of the drawer item.
+  final String title;
+
+  /// The icon of the drawer item.
+  final Widget? icon;
+
+  /// The callback when the drawer item is tapped.
+  final VoidCallback onTap;
+}
