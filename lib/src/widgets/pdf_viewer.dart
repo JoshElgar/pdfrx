@@ -190,6 +190,23 @@ class PdfViewer extends StatefulWidget {
   /// Page number to show initially.
   final int initialPageNumber;
 
+  /// Creates a copy of this PdfViewer with the given fields replaced by new values.
+  PdfViewer copyWith({
+    PdfDocumentRef? documentRef,
+    PdfViewerController? controller,
+    PdfViewerParams? params,
+    int? initialPageNumber,
+    Key? key,
+  }) {
+    return PdfViewer(
+      documentRef ?? this.documentRef,
+      key: key ?? this.key,
+      controller: controller ?? this.controller,
+      params: params ?? this.params,
+      initialPageNumber: initialPageNumber ?? this.initialPageNumber,
+    );
+  }
+
   @override
   State<PdfViewer> createState() => _PdfViewerState();
 }
@@ -924,26 +941,60 @@ class _PdfViewerState extends State<PdfViewer> with SingleTickerProviderStateMix
         canvas.drawRect(shadowRect, dropShadowPaint);
       }
 
+      // Get rotation override if it exists for this page
+      final PdfPageRotation? rotationOverride = widget.params.pageRotationOverrides[page.pageNumber];
+
       if (widget.params.pageBackgroundPaintCallbacks != null) {
         for (final callback in widget.params.pageBackgroundPaintCallbacks!) {
-          callback(canvas, rect, page);
+          if (rotationOverride != null && widget.params.applyPageRotationToCallbacks) {
+            canvas.save();
+            _applyRotationToCanvas(canvas, rect, rotationOverride);
+            callback(canvas, rect, page);
+            canvas.restore();
+          } else {
+            callback(canvas, rect, page);
+          }
         }
       }
 
       if (realSize != null) {
-        canvas.drawImageRect(
-          realSize.image,
-          Rect.fromLTWH(0, 0, realSize.image.width.toDouble(), realSize.image.height.toDouble()),
-          rect,
-          Paint()..filterQuality = FilterQuality.high,
-        );
+        if (rotationOverride != null) {
+          canvas.save();
+          _applyRotationToCanvas(canvas, rect, rotationOverride);
+          canvas.drawImageRect(
+            realSize.image,
+            Rect.fromLTWH(0, 0, realSize.image.width.toDouble(), realSize.image.height.toDouble()),
+            Rect.fromLTWH(0, 0, rect.width, rect.height), // Draw at origin since canvas is already transformed
+            Paint()..filterQuality = FilterQuality.high,
+          );
+          canvas.restore();
+        } else {
+          canvas.drawImageRect(
+            realSize.image,
+            Rect.fromLTWH(0, 0, realSize.image.width.toDouble(), realSize.image.height.toDouble()),
+            rect,
+            Paint()..filterQuality = FilterQuality.high,
+          );
+        }
       } else {
-        canvas.drawRect(
-          rect,
-          Paint()
-            ..color = Colors.white
-            ..style = PaintingStyle.fill,
-        );
+        if (rotationOverride != null) {
+          canvas.save();
+          _applyRotationToCanvas(canvas, rect, rotationOverride);
+          canvas.drawRect(
+            Rect.fromLTWH(0, 0, rect.width, rect.height), // Draw at origin since canvas is already transformed
+            Paint()
+              ..color = Colors.white
+              ..style = PaintingStyle.fill,
+          );
+          canvas.restore();
+        } else {
+          canvas.drawRect(
+            rect,
+            Paint()
+              ..color = Colors.white
+              ..style = PaintingStyle.fill,
+          );
+        }
       }
 
       if (realSize == null || realSize.scale != scaleLimit) {
@@ -956,21 +1007,47 @@ class _PdfViewerState extends State<PdfViewer> with SingleTickerProviderStateMix
       }
 
       if (pageScale > scaleLimit && partial != null) {
-        canvas.drawImageRect(
-          partial.image,
-          Rect.fromLTWH(0, 0, partial.image.width.toDouble(), partial.image.height.toDouble()),
-          partial.rect,
-          Paint()..filterQuality = FilterQuality.high,
-        );
+        if (rotationOverride != null) {
+          canvas.save();
+          _applyRotationToCanvas(canvas, rect, rotationOverride);
+          canvas.drawImageRect(
+            partial.image,
+            Rect.fromLTWH(0, 0, partial.image.width.toDouble(), partial.image.height.toDouble()),
+            Rect.fromLTWH(0, 0, partial.rect.width, partial.rect.height), // Draw at origin since canvas is already transformed
+            Paint()..filterQuality = FilterQuality.high,
+          );
+          canvas.restore();
+        } else {
+          canvas.drawImageRect(
+            partial.image,
+            Rect.fromLTWH(0, 0, partial.image.width.toDouble(), partial.image.height.toDouble()),
+            partial.rect,
+            Paint()..filterQuality = FilterQuality.high,
+          );
+        }
       }
 
       if (_canvasLinkPainter.isEnabled) {
-        _canvasLinkPainter.paintLinkHighlights(canvas, rect, page);
+        if (rotationOverride != null && widget.params.applyPageRotationToCallbacks) {
+          canvas.save();
+          _applyRotationToCanvas(canvas, rect, rotationOverride);
+          _canvasLinkPainter.paintLinkHighlights(canvas, Rect.fromLTWH(0, 0, rect.width, rect.height), page);
+          canvas.restore();
+        } else {
+          _canvasLinkPainter.paintLinkHighlights(canvas, rect, page);
+        }
       }
 
       if (widget.params.pagePaintCallbacks != null) {
         for (final callback in widget.params.pagePaintCallbacks!) {
-          callback(canvas, rect, page);
+          if (rotationOverride != null && widget.params.applyPageRotationToCallbacks) {
+            canvas.save();
+            _applyRotationToCanvas(canvas, rect, rotationOverride);
+            callback(canvas, Rect.fromLTWH(0, 0, rect.width, rect.height), page);
+            canvas.restore();
+          } else {
+            callback(canvas, rect, page);
+          }
         }
       }
 
@@ -984,21 +1061,72 @@ class _PdfViewerState extends State<PdfViewer> with SingleTickerProviderStateMix
     }
   }
 
+  /// Applies rotation to canvas for a given page rect and rotation value
+  void _applyRotationToCanvas(ui.Canvas canvas, Rect rect, PdfPageRotation rotation) {
+    // Calculate the center of the page rect for rotation
+    final centerX = rect.left + rect.width / 2;
+    final centerY = rect.top + rect.height / 2;
+
+    // Translate to the page's position
+    canvas.translate(rect.left, rect.top);
+
+    // Apply rotation based on the rotation value
+    switch (rotation) {
+      case PdfPageRotation.none:
+        // No rotation needed
+        break;
+      case PdfPageRotation.clockwise90:
+        // Rotate 90 degrees clockwise
+        canvas.translate(rect.width / 2, rect.height / 2);
+        canvas.rotate(pi / 2);
+        canvas.translate(-rect.height / 2, -rect.width / 2);
+        break;
+      case PdfPageRotation.clockwise180:
+        // Rotate 180 degrees
+        canvas.translate(rect.width / 2, rect.height / 2);
+        canvas.rotate(pi);
+        canvas.translate(-rect.width / 2, -rect.height / 2);
+        break;
+      case PdfPageRotation.clockwise270:
+        // Rotate 270 degrees clockwise (90 degrees counterclockwise)
+        canvas.translate(rect.width / 2, rect.height / 2);
+        canvas.rotate(3 * pi / 2);
+        canvas.translate(-rect.height / 2, -rect.width / 2);
+        break;
+    }
+  }
+
   void _relayoutPages() {
     if (_document == null) return;
     _layout = (widget.params.layoutPages ?? _layoutPages)(_document!.pages, widget.params);
   }
 
   PdfPageLayout _layoutPages(List<PdfPage> pages, PdfViewerParams params) {
-    final width = pages.fold(0.0, (w, p) => max(w, p.width)) + params.margin * 2;
+    // Collect page sizes considering rotation
+    final pageSizes = <Size>[];
+    for (int i = 0; i < pages.length; i++) {
+      final page = pages[i];
+      final rotation = params.pageRotationOverrides[page.pageNumber];
+
+      if (rotation == null || rotation == PdfPageRotation.none || rotation == PdfPageRotation.clockwise180) {
+        // No rotation or 180° rotation doesn't change dimensions
+        pageSizes.add(Size(page.width, page.height));
+      } else {
+        // 90° or 270° rotation swaps width and height
+        pageSizes.add(Size(page.height, page.width));
+      }
+    }
+
+    // Calculate max width for layout
+    final width = pageSizes.fold(0.0, (w, size) => max(w, size.width)) + params.margin * 2;
 
     final pageLayout = <Rect>[];
     var y = params.margin;
     for (int i = 0; i < pages.length; i++) {
-      final page = pages[i];
-      final rect = Rect.fromLTWH((width - page.width) / 2, y, page.width, page.height);
+      final pageSize = pageSizes[i];
+      final rect = Rect.fromLTWH((width - pageSize.width) / 2, y, pageSize.width, pageSize.height);
       pageLayout.add(rect);
-      y += page.height + params.margin;
+      y += pageSize.height + params.margin;
     }
 
     return PdfPageLayout(pageLayouts: pageLayout, documentSize: Size(width, y));
@@ -1888,6 +2016,111 @@ class PdfViewerController extends ValueListenable<Matrix4> {
   }
 
   void invalidate() => _state._invalidate();
+
+  /// Load text for the page.
+  Future<PdfPageText> loadPageText({required int pageNumber}) async {
+    _guessCurrentPageIfNeeded();
+    final page = document.pages[pageNumber - 1];
+    return page.loadText();
+  }
+
+  /// Rotate a specific page to the given rotation.
+  ///
+  /// This applies a rotation override that is applied on top of any intrinsic rotation in the PDF.
+  /// Note that this doesn't modify the actual PDF document, only how it's displayed.
+  ///
+  /// To reset the rotation to default, use [resetPageRotation].
+  void rotatePage(int pageNumber, PdfPageRotation rotation) {
+    if (pageNumber < 1 || pageNumber > pageCount) {
+      throw ArgumentError.value(pageNumber, 'pageNumber', 'Invalid page number');
+    }
+
+    final currentRotations = Map<int, PdfPageRotation>.from(_state.widget.params.pageRotationOverrides);
+    currentRotations[pageNumber] = rotation;
+
+    _state.widget = _state.widget.copyWith(
+      params: _state.widget.params.copyWith(pageRotationOverrides: currentRotations)
+    );
+
+    _state._relayoutPages();
+    _state._invalidate();
+  }
+
+  /// Reset the rotation of a specific page to its default value.
+  ///
+  /// This removes any rotation override applied by [rotatePage].
+  void resetPageRotation(int pageNumber) {
+    if (pageNumber < 1 || pageNumber > pageCount) {
+      throw ArgumentError.value(pageNumber, 'pageNumber', 'Invalid page number');
+    }
+
+    final currentRotations = Map<int, PdfPageRotation>.from(_state.widget.params.pageRotationOverrides);
+    if (currentRotations.containsKey(pageNumber)) {
+      currentRotations.remove(pageNumber);
+
+      _state.widget = _state.widget.copyWith(
+        params: _state.widget.params.copyWith(pageRotationOverrides: currentRotations)
+      );
+
+      _state._relayoutPages();
+      _state._invalidate();
+    }
+  }
+
+  /// Get the current rotation of a specific page including any rotation override.
+  ///
+  /// Returns the combined rotation value considering both the page's intrinsic rotation
+  /// and any rotation override applied through [rotatePage].
+  PdfPageRotation getPageRotation(int pageNumber) {
+    if (pageNumber < 1 || pageNumber > pageCount) {
+      throw ArgumentError.value(pageNumber, 'pageNumber', 'Invalid page number');
+    }
+
+    final page = document.pages[pageNumber - 1];
+    final overrideRotation = _state.widget.params.pageRotationOverrides[pageNumber];
+
+    if (overrideRotation == null) {
+      return page.rotation;
+    }
+
+    // Combine intrinsic and override rotations
+    final combinedRotation = (page.rotation.index + overrideRotation.index) % 4;
+    return PdfPageRotation.values[combinedRotation];
+  }
+
+  /// Rotate the current page to the given rotation.
+  ///
+  /// Shorthand for [rotatePage] using the current page.
+  /// If no current page is selected, this does nothing.
+  void rotateCurrentPage(PdfPageRotation rotation) {
+    final currentPage = pageNumber;
+    if (currentPage != null) {
+      rotatePage(currentPage, rotation);
+    }
+  }
+
+  /// Reset the rotation of the current page to its default value.
+  ///
+  /// Shorthand for [resetPageRotation] using the current page.
+  /// If no current page is selected, this does nothing.
+  void resetCurrentPageRotation() {
+    final currentPage = pageNumber;
+    if (currentPage != null) {
+      resetPageRotation(currentPage);
+    }
+  }
+
+  /// Reset all page rotations to their default values.
+  void resetAllPageRotations() {
+    if (_state.widget.params.pageRotationOverrides.isNotEmpty) {
+      _state.widget = _state.widget.copyWith(
+        params: _state.widget.params.copyWith(pageRotationOverrides: const {})
+      );
+
+      _state._relayoutPages();
+      _state._invalidate();
+    }
+  }
 }
 
 /// [PdfViewerController.calcFitZoomMatrices] returns the list of this class.

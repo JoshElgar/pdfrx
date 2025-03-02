@@ -59,6 +59,17 @@ class PdfViewerParams {
     this.selectableRegionInjector,
     this.perPageSelectableRegionInjector,
     this.forceReload = false,
+    this.pageRotationOverrides = const {},
+    this.applyPageRotationToCallbacks = true,
+    this.scrollUpDownDelta = 100,
+    this.doubleTapZoomRatio = 2.0,
+    this.doubleTapZoomBreakpoint = 0.5,
+    this.defaultHandleTapLinks = true,
+    this.onZoomChanged,
+    this.onSingleTap,
+    this.onDoubleTap,
+    this.pdfErrorBannerBuilder,
+    this.drawerItems,
   });
 
   /// Margin around the page.
@@ -499,6 +510,33 @@ class PdfViewerParams {
   /// sometimes it is useful to force reload the viewer by setting this to true.
   final bool forceReload;
 
+  /// Map of page number to rotation override. Page numbers are 1-based.
+  ///
+  /// This allows overriding the default rotation of specific pages.
+  /// Note that this rotation is applied on top of any intrinsic page rotation.
+  final Map<int, PdfPageRotation> pageRotationOverrides;
+
+  /// Whether to apply the page rotation to page callbacks.
+  ///
+  /// When true, all page callbacks including pagePaintCallbacks and pageBackgroundPaintCallbacks
+  /// will have the canvas rotated according to pageRotationOverrides.
+  final bool applyPageRotationToCallbacks;
+
+  /// Scroll up/down delta for double tap zoom. The default is 100.
+  final int scrollUpDownDelta;
+
+  /// Double tap zoom ratio. The default is 2.0.
+  final double doubleTapZoomRatio;
+
+  /// Double tap zoom breakpoint. The default is 0.5.
+  final double doubleTapZoomBreakpoint;
+
+  /// Whether to default handle tap links. The default is true.
+  final bool defaultHandleTapLinks;
+
+  /// Drawer items.
+  final List<DrawerItem>? drawerItems;
+
   /// Determine whether the viewer needs to be reloaded or not.
   ///
   bool doChangesRequireReload(PdfViewerParams? other) {
@@ -527,7 +565,25 @@ class PdfViewerParams {
         other.scrollByArrowKey != scrollByArrowKey ||
         other.horizontalCacheExtent != horizontalCacheExtent ||
         other.verticalCacheExtent != verticalCacheExtent ||
-        other.linkHandlerParams != linkHandlerParams;
+        other.linkHandlerParams != linkHandlerParams ||
+        other.viewerOverlayBuilder != viewerOverlayBuilder ||
+        other.pageOverlaysBuilder != pageOverlaysBuilder ||
+        other.loadingBannerBuilder != loadingBannerBuilder ||
+        other.errorBannerBuilder != errorBannerBuilder ||
+        other.linkWidgetBuilder != linkWidgetBuilder ||
+        other.pagePaintCallbacks != pagePaintCallbacks ||
+        other.pageBackgroundPaintCallbacks != pageBackgroundPaintCallbacks ||
+        other.onTextSelectionChange != onTextSelectionChange ||
+        other.selectableRegionInjector != selectableRegionInjector ||
+        other.perPageSelectableRegionInjector != perPageSelectableRegionInjector ||
+        other.forceReload != forceReload ||
+        other.pageRotationOverrides != pageRotationOverrides ||
+        other.applyPageRotationToCallbacks != applyPageRotationToCallbacks ||
+        other.scrollUpDownDelta != scrollUpDownDelta ||
+        other.doubleTapZoomRatio != doubleTapZoomRatio ||
+        other.doubleTapZoomBreakpoint != doubleTapZoomBreakpoint ||
+        other.defaultHandleTapLinks != defaultHandleTapLinks ||
+        other.drawerItems != drawerItems;
   }
 
   @override
@@ -578,13 +634,22 @@ class PdfViewerParams {
         other.onTextSelectionChange == onTextSelectionChange &&
         other.selectableRegionInjector == selectableRegionInjector &&
         other.perPageSelectableRegionInjector == perPageSelectableRegionInjector &&
-        other.forceReload == forceReload;
+        other.forceReload == forceReload &&
+        other.pageRotationOverrides == pageRotationOverrides &&
+        other.applyPageRotationToCallbacks == applyPageRotationToCallbacks &&
+        other.scrollUpDownDelta == scrollUpDownDelta &&
+        other.doubleTapZoomRatio == doubleTapZoomRatio &&
+        other.doubleTapZoomBreakpoint == doubleTapZoomBreakpoint &&
+        other.defaultHandleTapLinks == defaultHandleTapLinks &&
+        other.drawerItems == drawerItems;
   }
 
   @override
   int get hashCode {
     return margin.hashCode ^
         backgroundColor.hashCode ^
+        layoutPages.hashCode ^
+        normalizeMatrix.hashCode ^
         maxScale.hashCode ^
         minScale.hashCode ^
         useAlternativeFitScaleAsMinScale.hashCode ^
@@ -600,20 +665,17 @@ class PdfViewerParams {
         pageDropShadow.hashCode ^
         panEnabled.hashCode ^
         scaleEnabled.hashCode ^
-        onInteractionEnd.hashCode ^
-        onInteractionStart.hashCode ^
-        onInteractionUpdate.hashCode ^
-        interactionEndFrictionCoefficient.hashCode ^
         onDocumentChanged.hashCode ^
+        onInteractionStart.hashCode ^
+        onInteractionEnd.hashCode ^
         calculateInitialPageNumber.hashCode ^
         calculateCurrentPageNumber.hashCode ^
         onViewerReady.hashCode ^
-        onViewSizeChanged.hashCode ^
         onPageChanged.hashCode ^
-        getPageRenderingScale.hashCode ^
         scrollByMouseWheel.hashCode ^
         enableKeyboardNavigation.hashCode ^
         scrollByArrowKey.hashCode ^
+        maxImageBytesCachedOnMemory.hashCode ^
         horizontalCacheExtent.hashCode ^
         verticalCacheExtent.hashCode ^
         linkHandlerParams.hashCode ^
@@ -627,7 +689,139 @@ class PdfViewerParams {
         onTextSelectionChange.hashCode ^
         selectableRegionInjector.hashCode ^
         perPageSelectableRegionInjector.hashCode ^
-        forceReload.hashCode;
+        forceReload.hashCode ^
+        pageRotationOverrides.hashCode ^
+        applyPageRotationToCallbacks.hashCode ^
+        scrollUpDownDelta.hashCode ^
+        doubleTapZoomRatio.hashCode ^
+        doubleTapZoomBreakpoint.hashCode ^
+        defaultHandleTapLinks.hashCode ^
+        drawerItems.hashCode;
+  }
+
+  /// Creates a copy of this PdfViewerParams with the given fields replaced by new values.
+  PdfViewerParams copyWith({
+    double? margin,
+    Color? backgroundColor,
+    PdfLayoutPagesCallback? layoutPages,
+    PdfNormalizeMatrixCallback? normalizeMatrix,
+    double? maxScale,
+    double? minScale,
+    bool? useAlternativeFitScaleAsMinScale,
+    PanAxis? panAxis,
+    EdgeInsets? boundaryMargin,
+    PdfAnnotationRenderingMode? annotationRenderingMode,
+    PdfPageAnchor? pageAnchor,
+    PdfPageAnchor? pageAnchorEnd,
+    double? onePassRenderingScaleThreshold,
+    bool? enableTextSelection,
+    Color? matchTextColor,
+    Color? activeMatchTextColor,
+    BoxShadow? pageDropShadow,
+    bool? panEnabled,
+    bool? scaleEnabled,
+    Function(PdfDocumentInfo?)? onDocumentChanged,
+    Function(ScaleStartDetails)? onInteractionStart,
+    Function(ScaleEndDetails)? onInteractionEnd,
+    Function(ScaleUpdateDetails)? onInteractionUpdate,
+    double? interactionEndFrictionCoefficient,
+    Function(PdfDocument)? calculateInitialPageNumber,
+    Function(Rect, List<Rect>, PdfViewerController)? calculateCurrentPageNumber,
+    Function(PdfViewerController)? onViewerReady,
+    Function(Size, Size?, PdfViewerController)? onViewSizeChanged,
+    Function(int?, int?)? onPageChanged,
+    Function(BuildContext, PdfPage, PdfViewerController, double)? getPageRenderingScale,
+    double? scrollByMouseWheel,
+    bool? enableKeyboardNavigation,
+    double? scrollByArrowKey,
+    int? maxImageBytesCachedOnMemory,
+    double? horizontalCacheExtent,
+    double? verticalCacheExtent,
+    PdfLinkHandlerParams? linkHandlerParams,
+    Function(BuildContext, Size, PdfViewerController)? viewerOverlayBuilder,
+    Function(BuildContext, Rect, PdfPage)? pageOverlaysBuilder,
+    Function(BuildContext, Size)? loadingBannerBuilder,
+    Function(BuildContext, Object, StackTrace?, PdfDocumentRef)? errorBannerBuilder,
+    Function(BuildContext, Rect, PdfPage)? linkWidgetBuilder,
+    List<PdfPagePaintCallback>? pagePaintCallbacks,
+    List<PdfPagePaintCallback>? pageBackgroundPaintCallbacks,
+    Function(PdfPageTextSelectionResult?)? onTextSelectionChange,
+    Function(BuildContext, Widget)? selectableRegionInjector,
+    Function(BuildContext, Widget, PdfPage, Rect)? perPageSelectableRegionInjector,
+    bool? forceReload,
+    Map<int, PdfPageRotation>? pageRotationOverrides,
+    bool? applyPageRotationToCallbacks,
+    int? scrollUpDownDelta,
+    double? doubleTapZoomRatio,
+    double? doubleTapZoomBreakpoint,
+    bool? defaultHandleTapLinks,
+    Function(double)? onZoomChanged,
+    Function(TapUpDetails, PdfViewerController)? onSingleTap,
+    Function(TapDownDetails, PdfViewerController)? onDoubleTap,
+    Function(BuildContext, Object, StackTrace?, PdfDocumentRef)? pdfErrorBannerBuilder,
+    List<DrawerItem>? drawerItems,
+  }) {
+    return PdfViewerParams(
+      margin: margin ?? this.margin,
+      backgroundColor: backgroundColor ?? this.backgroundColor,
+      layoutPages: layoutPages ?? this.layoutPages,
+      normalizeMatrix: normalizeMatrix ?? this.normalizeMatrix,
+      maxScale: maxScale ?? this.maxScale,
+      minScale: minScale ?? this.minScale,
+      useAlternativeFitScaleAsMinScale: useAlternativeFitScaleAsMinScale ?? this.useAlternativeFitScaleAsMinScale,
+      panAxis: panAxis ?? this.panAxis,
+      boundaryMargin: boundaryMargin ?? this.boundaryMargin,
+      annotationRenderingMode: annotationRenderingMode ?? this.annotationRenderingMode,
+      pageAnchor: pageAnchor ?? this.pageAnchor,
+      pageAnchorEnd: pageAnchorEnd ?? this.pageAnchorEnd,
+      onePassRenderingScaleThreshold: onePassRenderingScaleThreshold ?? this.onePassRenderingScaleThreshold,
+      enableTextSelection: enableTextSelection ?? this.enableTextSelection,
+      matchTextColor: matchTextColor ?? this.matchTextColor,
+      activeMatchTextColor: activeMatchTextColor ?? this.activeMatchTextColor,
+      pageDropShadow: pageDropShadow ?? this.pageDropShadow,
+      panEnabled: panEnabled ?? this.panEnabled,
+      scaleEnabled: scaleEnabled ?? this.scaleEnabled,
+      onDocumentChanged: onDocumentChanged ?? this.onDocumentChanged,
+      onInteractionStart: onInteractionStart ?? this.onInteractionStart,
+      onInteractionEnd: onInteractionEnd ?? this.onInteractionEnd,
+      onInteractionUpdate: onInteractionUpdate ?? this.onInteractionUpdate,
+      interactionEndFrictionCoefficient: interactionEndFrictionCoefficient ?? this.interactionEndFrictionCoefficient,
+      calculateInitialPageNumber: calculateInitialPageNumber ?? this.calculateInitialPageNumber,
+      calculateCurrentPageNumber: calculateCurrentPageNumber ?? this.calculateCurrentPageNumber,
+      onViewerReady: onViewerReady ?? this.onViewerReady,
+      onViewSizeChanged: onViewSizeChanged ?? this.onViewSizeChanged,
+      onPageChanged: onPageChanged ?? this.onPageChanged,
+      getPageRenderingScale: getPageRenderingScale ?? this.getPageRenderingScale,
+      scrollByMouseWheel: scrollByMouseWheel ?? this.scrollByMouseWheel,
+      enableKeyboardNavigation: enableKeyboardNavigation ?? this.enableKeyboardNavigation,
+      scrollByArrowKey: scrollByArrowKey ?? this.scrollByArrowKey,
+      maxImageBytesCachedOnMemory: maxImageBytesCachedOnMemory ?? this.maxImageBytesCachedOnMemory,
+      horizontalCacheExtent: horizontalCacheExtent ?? this.horizontalCacheExtent,
+      verticalCacheExtent: verticalCacheExtent ?? this.verticalCacheExtent,
+      linkHandlerParams: linkHandlerParams ?? this.linkHandlerParams,
+      viewerOverlayBuilder: viewerOverlayBuilder ?? this.viewerOverlayBuilder,
+      pageOverlaysBuilder: pageOverlaysBuilder ?? this.pageOverlaysBuilder,
+      loadingBannerBuilder: loadingBannerBuilder ?? this.loadingBannerBuilder,
+      errorBannerBuilder: errorBannerBuilder ?? this.errorBannerBuilder,
+      linkWidgetBuilder: linkWidgetBuilder ?? this.linkWidgetBuilder,
+      pagePaintCallbacks: pagePaintCallbacks ?? this.pagePaintCallbacks,
+      pageBackgroundPaintCallbacks: pageBackgroundPaintCallbacks ?? this.pageBackgroundPaintCallbacks,
+      onTextSelectionChange: onTextSelectionChange ?? this.onTextSelectionChange,
+      selectableRegionInjector: selectableRegionInjector ?? this.selectableRegionInjector,
+      perPageSelectableRegionInjector: perPageSelectableRegionInjector ?? this.perPageSelectableRegionInjector,
+      forceReload: forceReload ?? this.forceReload,
+      pageRotationOverrides: pageRotationOverrides ?? this.pageRotationOverrides,
+      applyPageRotationToCallbacks: applyPageRotationToCallbacks ?? this.applyPageRotationToCallbacks,
+      scrollUpDownDelta: scrollUpDownDelta ?? this.scrollUpDownDelta,
+      doubleTapZoomRatio: doubleTapZoomRatio ?? this.doubleTapZoomRatio,
+      doubleTapZoomBreakpoint: doubleTapZoomBreakpoint ?? this.doubleTapZoomBreakpoint,
+      defaultHandleTapLinks: defaultHandleTapLinks ?? this.defaultHandleTapLinks,
+      onZoomChanged: onZoomChanged ?? this.onZoomChanged,
+      onSingleTap: onSingleTap ?? this.onSingleTap,
+      onDoubleTap: onDoubleTap ?? this.onDoubleTap,
+      pdfErrorBannerBuilder: pdfErrorBannerBuilder ?? this.pdfErrorBannerBuilder,
+      drawerItems: drawerItems ?? this.drawerItems,
+    );
   }
 }
 
